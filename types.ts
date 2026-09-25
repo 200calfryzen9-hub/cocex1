@@ -52,6 +52,8 @@ export interface Note {
   text: string;
   isTodo?: boolean;
   isDone?: boolean;
+  targetCalfEarTag?: string;
+  targetMotherId?: string;
 }
 
 export interface Calf {
@@ -61,12 +63,15 @@ export interface Calf {
   name?: string;
   birthDate: string;
   sex: 'MALE' | 'FEMALE';
-  fatherName?: string; 
+  fatherName?: string;
+  motherFatherName?: string; // 母の父(母方祖父)
+  motherMotherFatherName?: string; // 母の母の父(母方曾祖父)
   price?: number;
   weight?: number;
   grade?: string; 
   bms?: number; 
   auctionDate?: string; // Existing, can be used for "せり月"
+  ageInDays?: number; // せり時点の日齢(伝票記載の値)
   notes?: Note[]; // Added memo field
   isRemoved?: boolean; // 抹消（アーカイブ）フラグ
 }

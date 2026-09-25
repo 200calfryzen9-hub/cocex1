@@ -1,8 +1,8 @@
 
-import React, { useState } from 'react';
+import React, { useMemo } from 'react';
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, LineChart, Line, ComposedChart } from 'recharts';
-import { Calf, Cow, Settings as SettingsType, BreedingStatus, EventType } from '../types';
-import { formatDateJP, calculateBreedingScore, daysBetween, parseDate, safeEventsArray } from '../utils/breedingService';
+import { Calf, Cow, Settings as SettingsType, BreedingStatus } from '../types';
+import { formatDateJP, calculateBreedingScore, daysBetween, parseDate } from '../utils/breedingService';
 import { GitFork, RotateCcw, Activity, TrendingUp, Database } from 'lucide-react';
 
 interface AnalyticsProps {
@@ -14,7 +14,6 @@ interface AnalyticsProps {
 }
 
 export const Analytics: React.FC<AnalyticsProps> = ({ cows, calves, settings, onResetData, onCowClick }) => {
-  const [expandedCowId, setExpandedCowId] = useState<string | null>(null);
   // Sales Data Processing
   const salesData = calves.filter(c => c.price && c.price > 0).map(c => {
         const dateStr = c.auctionDate || c.birthDate;
@@ -68,27 +67,6 @@ export const Analytics: React.FC<AnalyticsProps> = ({ cows, calves, settings, on
   };
   const fatherStats = calculateBloodlineStats('fatherName'); 
   const grandFatherStats = calculateBloodlineStats('motherFatherName'); 
-
-  const cowPerformance = cows.filter(cow => !cow.isRemoved).map(cow => {
-      const offspring = calves.filter(calf => calf.motherId === cow.id && !calf.isRemoved);
-      const sold = offspring.filter(calf => (calf.price || 0) > 0);
-      const events = safeEventsArray(cow.events);
-      const checks = events.filter(event => event?.type === EventType.PREG_CHECK);
-      const confirmed = checks.filter(event => event.metadata?.pregResult === true).length;
-      const calvings = events.filter(event => event?.type === EventType.CALVING).sort((a, b) => a.date.localeCompare(b.date));
-      const intervals = calvings.slice(1).map((event, index) => daysBetween(parseDate(event.date), parseDate(calvings[index].date)));
-      return {
-          cow,
-          offspring,
-          sold,
-          revenue: sold.reduce((sum, calf) => sum + (calf.price || 0), 0),
-          averagePrice: sold.length ? Math.round(sold.reduce((sum, calf) => sum + (calf.price || 0), 0) / sold.length) : 0,
-          averageInterval: intervals.length ? Math.round(intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length) : undefined,
-          checkCount: checks.length,
-          confirmed,
-          calvingCount: calvings.length
-      };
-  }).sort((a, b) => b.revenue - a.revenue || b.offspring.length - a.offspring.length);
 
   // --- REVENUE PROJECTION ---
   const estimatedPrice = settings?.estimatedCalfPrice || 750000;
@@ -360,7 +338,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ cows, calves, settings, on
                                       detailText = `産後${daysBetween(new Date(), new Date(cow.lastCalvingDate))}日`;
                                   }
 
-                                  const displayId = cow.earTag;
+                                  const displayId = cow.earTag.length >= 5 ? cow.earTag.slice(-5) : cow.earTag;
                                   // ★予定超過の牛は枠を強調
                                   const overdueRing = (flags.calvingOverdue || flags.estrusOverdue) ? 'ring-2 ring-red-400' : '';
 
@@ -432,46 +410,6 @@ export const Analytics: React.FC<AnalyticsProps> = ({ cows, calves, settings, on
               </ResponsiveContainer>
           ) : <div className="h-full flex items-center justify-center text-gray-400 text-xs">データなし</div>}
       </div>
-
-      <section className="space-y-3">
-          <div className="flex items-end justify-between">
-              <div>
-                  <h2 className="text-lg font-bold text-gray-900">母牛ごとの成績</h2>
-                  <p className="text-xs text-gray-500">頭数と平均価格を一覧で確認。タップすると繁殖・販売の内訳を表示します。</p>
-              </div>
-          </div>
-          <div className="space-y-2">
-              {cowPerformance.map(row => {
-                  const expanded = expandedCowId === row.cow.id;
-                  return <div key={row.cow.id} className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                      <button onClick={() => setExpandedCowId(expanded ? null : row.cow.id)} className="w-full p-3 text-left">
-                          <div className="flex items-center justify-between gap-2">
-                              <div className="min-w-0"><div className="font-bold text-gray-800 truncate">{row.cow.earTag} {row.cow.name}</div><div className="text-xs text-gray-500">産子 {row.offspring.length}頭 ・ 販売 {row.sold.length}頭</div></div>
-                              <div className="text-right shrink-0"><div className="text-[10px] text-gray-400">販売平均</div><div className="font-bold text-wagyu-700">{row.averagePrice ? `¥${row.averagePrice.toLocaleString()}` : '—'}</div></div>
-                          </div>
-                      </button>
-                      {expanded && <div className="px-3 pb-3 border-t border-gray-100 pt-3 space-y-3">
-                          <div className="grid grid-cols-2 gap-2 text-xs">
-                              <div className="bg-gray-50 p-2 rounded-lg"><span className="text-gray-500">販売総額</span><div className="font-bold text-gray-800">¥{row.revenue.toLocaleString()}</div></div>
-                              <div className="bg-gray-50 p-2 rounded-lg"><span className="text-gray-500">分娩記録</span><div className="font-bold text-gray-800">{row.calvingCount}回</div></div>
-                              <div className="bg-gray-50 p-2 rounded-lg"><span className="text-gray-500">妊娠鑑定</span><div className="font-bold text-gray-800">{row.confirmed}/{row.checkCount}回 陽性</div></div>
-                              <div className="bg-gray-50 p-2 rounded-lg"><span className="text-gray-500">平均分娩間隔</span><div className="font-bold text-gray-800">{row.averageInterval ? `${row.averageInterval}日` : '記録不足'}</div></div>
-                          </div>
-                          {row.offspring.length > 0 && <div>
-                              <div className="text-xs font-bold text-gray-600 mb-1">産子・販売記録</div>
-                              <div className="divide-y divide-gray-100">
-                                  {[...row.offspring].sort((a, b) => b.birthDate.localeCompare(a.birthDate)).map(calf => <div key={calf.id} className="py-1.5 flex justify-between gap-2 text-xs">
-                                      <span className="text-gray-700 truncate">{calf.birthDate} ・ {calf.earTag ? calf.earTag.slice(-5) : '番号未登録'} ・ {calf.sex === 'MALE' ? '雄' : '雌'}</span>
-                                      <span className="font-medium shrink-0">{calf.price ? `¥${calf.price.toLocaleString()}` : '未販売'}</span>
-                                  </div>)}
-                              </div>
-                          </div>}
-                      </div>}
-                  </div>;
-              })}
-              {cowPerformance.length === 0 && <div className="bg-white rounded-xl p-6 text-center text-sm text-gray-400">母牛の登録がありません</div>}
-          </div>
-      </section>
 
       {/* Bloodline Stats (Simplified visual) */}
       <div className="space-y-4">

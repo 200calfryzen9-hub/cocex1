@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Cow, Calf, DashboardAlert, GeneralEvent, Note } from '../types';
 import { Bell, AlertTriangle, Calendar, CheckCircle, Sparkles, Pencil, History, X, CheckCircle2, Circle, Trash2, Send, ClipboardList, ArrowRight } from 'lucide-react';
 import { CalendarView } from './CalendarView';
@@ -26,40 +26,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ cows, calves, alerts, onCo
   const [memoText, setMemoText] = useState('');
   const [showQuickTags, setShowQuickTags] = useState(false);
   const [showAllMemos, setShowAllMemos] = useState(false);
-  const [pendingCalfMemos, setPendingCalfMemos] = useState<Note[]>(() => {
-      try { return JSON.parse(localStorage.getItem('wagyu_pending_calf_memos') || '[]'); }
-      catch { return []; }
-  });
-
-  useEffect(() => {
-      localStorage.setItem('wagyu_pending_calf_memos', JSON.stringify(pendingCalfMemos));
-  }, [pendingCalfMemos]);
-
-  useEffect(() => {
-      if (pendingCalfMemos.length === 0) return;
-      const remaining: Note[] = [];
-      for (const note of pendingCalfMemos) {
-          const targetEarTag = note.targetCalfEarTag;
-          const matches = targetEarTag
-              ? calves.filter(c => !c.isRemoved && c.earTag && c.earTag.endsWith(targetEarTag))
-              : calves.filter(c => !c.isRemoved && c.motherId === note.targetMotherId && c.birthDate <= note.date.slice(0, 10));
-          if (matches.length !== 1) {
-              remaining.push(note);
-              continue;
-          }
-          const calf = matches[0];
-          onUpdateCalf({
-              ...calf,
-              notes: (calf.notes || []).some(existing => existing.id === note.id)
-                  ? calf.notes
-                  : [...(calf.notes || []), { ...note, targetCalfEarTag: undefined, targetMotherId: undefined }],
-          });
-      }
-      if (remaining.length !== pendingCalfMemos.length) setPendingCalfMemos(remaining);
-  }, [calves, pendingCalfMemos, cows, onUpdateCalf]);
 
   const memoPreview = memoText.trim() ? parseMemoTarget(memoText, cows, calves) : null;
-  const canSaveMemo = !!memoPreview && ['COW', 'CALF', 'PENDING_CALF'].includes(memoPreview.kind) && 'text' in memoPreview && !!memoPreview.text;
 
   const handleTagClick = (tag: string) => {
       setMemoText(prev => prev.trim() ? `${prev.trim()} ${tag}` : tag);
@@ -72,22 +40,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ cows, calves, alerts, onCo
 
       if (memoPreview.kind === 'COW') {
           if (!memoPreview.text) return;
-          const newNote = makeQuickMemoNote(memoPreview.text, now);
+          const newNote: Note = { id: Date.now().toString(), date: now, text: memoPreview.text };
           onUpdateCow({ ...memoPreview.cow, notes: [...(memoPreview.cow.notes || []), newNote] });
           setMemoText('');
       } else if (memoPreview.kind === 'CALF') {
           if (!memoPreview.text) return;
-          const newNote = makeQuickMemoNote(memoPreview.text, now);
+          const newNote: Note = { id: Date.now().toString(), date: now, text: memoPreview.text };
           onUpdateCalf({ ...memoPreview.calf, notes: [...(memoPreview.calf.notes || []), newNote] });
-          setMemoText('');
-      } else if (memoPreview.kind === 'PENDING_CALF') {
-          if (!memoPreview.text) return;
-          const newNote = makeQuickMemoNote(memoPreview.text, now);
-          setPendingCalfMemos(prev => [...prev, {
-              ...newNote,
-              targetCalfEarTag: memoPreview.cow ? undefined : memoPreview.digits,
-              targetMotherId: memoPreview.cow?.id,
-          }]);
           setMemoText('');
       }
       // AMBIGUOUS_COW / NOT_FOUND_COW / NOT_FOUND_CALF / NO_REFERENCE の場合は送信せず、プレビューのエラー表示に任せる
@@ -219,7 +178,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ cows, calves, alerts, onCo
               />
               <button
                   onClick={handleSendMemo}
-                  disabled={!canSaveMemo}
+                  disabled={!memoPreview || (memoPreview.kind !== 'COW' && memoPreview.kind !== 'CALF') || !memoPreview.text}
                   className="bg-wagyu-600 text-white p-2.5 rounded-full flex-shrink-0 disabled:opacity-50 disabled:bg-gray-400 transition-colors shadow-sm"
               >
                   <Send size={18} className="translate-x-[1px]" />
@@ -241,14 +200,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ cows, calves, alerts, onCo
                           {!memoPreview.text && <span className="ml-1 text-gray-400">（メモ内容を入力してください）</span>}
                       </div>
                   )}
-                  {memoPreview.kind === 'PENDING_CALF' && (
-                      <div className={`flex items-center gap-1 ${memoPreview.text ? 'text-amber-700 font-bold' : 'text-gray-400'}`}>
-                          <ArrowRight size={12} /> 子牛番号 {memoPreview.digits} の未処理メモとして保存し、出生子牛の登録後に自動で紐づけます
-                      </div>
-                  )}
-                  {memoPreview.kind === 'AMBIGUOUS_CALF' && (
-                      <div className="text-orange-500">子牛番号 {memoPreview.digits} に一致する子牛が複数います。番号を長く入力してください</div>
-                  )}
                   {memoPreview.kind === 'NOT_FOUND_COW' && (
                       <div className="text-red-500">耳標下{memoPreview.digits.length}桁「{memoPreview.digits}」に一致する牛が見つかりません</div>
                   )}
@@ -261,19 +212,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ cows, calves, alerts, onCo
                   {memoPreview.kind === 'NO_REFERENCE' && (
                       <div className="text-gray-400">先頭に耳標番号を入力してください（例: 44442 発情）</div>
                   )}
-              </div>
-          )}
-          {pendingCalfMemos.length > 0 && (
-              <div className="mt-3 border-t border-amber-100 pt-3">
-                  <div className="text-xs font-bold text-amber-700 mb-2">子牛との紐づけ待ち ({pendingCalfMemos.length})</div>
-                  <div className="space-y-2">
-                      {pendingCalfMemos.map(note => (
-                          <div key={note.id} className="flex items-start justify-between gap-2 rounded-lg bg-amber-50 p-2 text-xs">
-                              <div><span className="font-mono font-bold">{note.targetCalfEarTag || '母牛の子'}</span>　{note.text}</div>
-                              <button type="button" onClick={() => setPendingCalfMemos(prev => prev.filter(item => item.id !== note.id))} className="text-gray-400 hover:text-red-500" aria-label="未処理メモを削除">×</button>
-                          </div>
-                      ))}
-                  </div>
               </div>
           )}
       </section>
@@ -512,10 +450,4 @@ export const Dashboard: React.FC<DashboardProps> = ({ cows, calves, alerts, onCo
       )}
     </div>
   );
-};
-
-const makeQuickMemoNote = (text: string, date: string): Note => {
-    const treatment = /(ワクチン|接種|投与|飲ませ|飲水|駆虫|TSV|バイコックス)/i.test(text);
-    const completed = /(接種した|接種しました|投与した|投与しました|飲ませた|飲ませました|与えた|実施した|済み|完了)/.test(text);
-    return { id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, date, text, ...(treatment ? { isTodo: true, isDone: completed } : {}) };
 };

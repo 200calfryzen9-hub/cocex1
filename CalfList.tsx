@@ -1,17 +1,15 @@
 import React, { useState } from 'react';
-import { Calf, Cow } from '../types';
-import { Baby, Plus, Search, ScanLine } from 'lucide-react';
+import { Calf } from '../types';
+import { Baby, Plus, Search } from 'lucide-react';
 import { formatDateJP, calculateAge } from '../utils/breedingService';
 
 interface CalfListProps {
   calves: Calf[];
-  cows: Cow[];
   onCalfClick: (calfId: string) => void;
   onAddCalfClick: () => void;
-  onScanReceiptClick: () => void;
 }
 
-export const CalfList: React.FC<CalfListProps> = ({ calves, cows, onCalfClick, onAddCalfClick, onScanReceiptClick }) => {
+export const CalfList: React.FC<CalfListProps> = ({ calves, onCalfClick, onAddCalfClick }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterMode, setFilterMode] = useState<'ALL' | 'REMOVED'>('ALL');
 
@@ -97,12 +95,15 @@ export const CalfList: React.FC<CalfListProps> = ({ calves, cows, onCalfClick, o
                         </div>
                     </div>
                     
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-3 text-xs text-gray-600">
-                        <div className="flex flex-col min-w-0"><span className="text-gray-400 text-[10px]">生年月日</span><span className="font-medium">{formatDateJP(calf.birthDate)}</span></div>
-                        <div className="flex flex-col min-w-0"><span className="text-gray-400 text-[10px]">母牛</span><span className="font-medium truncate">{(() => { const mother = cows.find(c => c.id === calf.motherId); return mother ? `${mother.earTag} ${mother.name}` : '-'; })()}</span></div>
-                        <div className="flex flex-col min-w-0"><span className="text-gray-400 text-[10px]">種雄牛（父）</span><span className="font-bold text-gray-800 truncate">{calf.fatherName || '-'}</span></div>
-                        <div className="flex flex-col min-w-0"><span className="text-gray-400 text-[10px]">母の父</span><span className="font-medium truncate">{calf.motherFatherName || '-'}</span></div>
-                        <div className="flex flex-col min-w-0"><span className="text-gray-400 text-[10px]">母の母の父</span><span className="font-medium truncate">{calf.motherMotherFatherName || '-'}</span></div>
+                    <div className="flex items-center text-xs text-gray-600 gap-4 mt-3">
+                        <div className="flex flex-col">
+                            <span className="text-gray-400 text-[10px]">生年月日</span>
+                            <span className="font-medium">{formatDateJP(calf.birthDate)}</span>
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-gray-400 text-[10px]">種雄牛(父)</span>
+                            <span className="font-medium">{calf.fatherName || '-'}</span>
+                        </div>
                         {calf.auctionDate && (
                             <div className="flex flex-col">
                                 <span className="text-gray-400 text-[10px]">出荷月</span>
@@ -123,14 +124,7 @@ export const CalfList: React.FC<CalfListProps> = ({ calves, cows, onCalfClick, o
       </div>
 
       {/* FAB */}
-      <button
-        onClick={onScanReceiptClick}
-        className="fixed bottom-40 right-6 w-12 h-12 bg-white text-wagyu-600 border border-wagyu-200 rounded-full flex items-center justify-center shadow-glow hover:bg-wagyu-50 transition-all z-20 active:scale-90"
-        title="伝票をスキャンして追加/更新"
-      >
-        <ScanLine size={22} />
-      </button>
-      <button
+      <button 
         onClick={onAddCalfClick}
         className="fixed bottom-20 right-6 w-14 h-14 bg-wagyu-600 text-white rounded-full flex items-center justify-center shadow-glow hover:bg-wagyu-700 transition-all z-20 active:scale-90"
       >

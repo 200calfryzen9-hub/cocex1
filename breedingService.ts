@@ -5,11 +5,6 @@ import { GESTATION_DAYS, ESTRUS_CYCLE_DAYS } from '../constants';
 // Simple date helpers
 export const parseDate = (dateStr: string) => new Date(dateStr);
 
-// 耳標番号の比較用正規化。区切りハイフンや空白を除去し末尾5桁に揃える。
-// (フル番号の先頭は地域/牧場の共通プレフィックスで、個体を区別するのは末尾5桁という慣習に合わせる)
-export const earTagLast5 = (earTag?: string): string =>
-  (earTag || '').replace(/\D/g, '').slice(-5);
-
 // FIX: Use local time for formatting to prevent timezone shifts (e.g. UTC vs JST)
 export const formatDate = (date: Date) => {
   const year = date.getFullYear();
@@ -375,31 +370,15 @@ export const resolveFatherName = (calf: { motherId?: string; birthDate?: string;
     if (!calf.motherId) return undefined;
     const mother = cows.find(c => c.id === calf.motherId);
     if (!mother) return undefined;
-    const events = safeEventsArray(mother.events);
-    const insems = events
+    const insems = safeEventsArray(mother.events)
         .filter(e => e && e.type === EventType.INSEMINATION && e.relatedId)
         .sort((a, b) => b.date.localeCompare(a.date)); // 新しい順
     if (insems.length === 0) return undefined;
-    const birthDate = calf.birthDate;
-    if (!birthDate) return insems[0]?.relatedId;
-    {
-        const positiveChecks = events
-            .filter(e => e && e.type === EventType.PREG_CHECK && e.metadata?.pregResult === true && e.date <= birthDate)
-            .sort((a, b) => b.date.localeCompare(a.date));
-        for (const check of positiveChecks) {
-            const service = insems.find(e => e.id === check.metadata?.inseminationEventId)
-                || insems.find(e => e.date <= check.date);
-            const sire = check.metadata?.fatherName || check.relatedId || service?.relatedId;
-            if (!service || !sire) continue;
-            const expectedBirth = addDays(parseDate(service.date), GESTATION_DAYS);
-            if (Math.abs(daysBetween(parseDate(birthDate), expectedBirth)) <= 45) return sire;
-        }
-        const matchingService = insems.find(e => {
-            const expectedBirth = addDays(parseDate(e.date), GESTATION_DAYS);
-            return Math.abs(daysBetween(parseDate(birthDate), expectedBirth)) <= 45;
-        });
-        return matchingService?.relatedId;
+    if (calf.birthDate) {
+        const before = insems.find(e => e.date <= calf.birthDate);
+        if (before) return before.relatedId;
     }
+    return insems[0].relatedId;
 };
 
 // --- ホーム画面クイックメモの宛先解析 ---
@@ -408,46 +387,30 @@ export const resolveFatherName = (calf: { motherId?: string; birthDate?: string;
 export type MemoTarget =
     | { kind: 'COW'; cow: Cow; text: string }
     | { kind: 'CALF'; calf: Calf; cow: Cow; text: string }
-    | { kind: 'PENDING_CALF'; digits: string; text: string; cow?: Cow }
     | { kind: 'AMBIGUOUS_COW'; digits: string; matches: Cow[] }
-    | { kind: 'AMBIGUOUS_CALF'; digits: string; matches: Calf[] }
     | { kind: 'NOT_FOUND_COW'; digits: string }
     | { kind: 'NOT_FOUND_CALF'; digits: string; cow: Cow }
     | { kind: 'NO_REFERENCE' };
 
 export const parseMemoTarget = (input: string, cows: Cow[], calves: Calf[]): MemoTarget => {
     const trimmed = input.trim();
-    const match = trimmed.match(/(?:^|[^\d])(\d{2,})(?!\d)/);
+    const match = trimmed.match(/^(\d{2,})(の子)?[\s　]*([\s\S]*)$/);
     if (!match) return { kind: 'NO_REFERENCE' };
 
-    const digits = match[1];
-    const start = match.index ?? 0;
-    const before = trimmed.slice(0, start).trim();
-    const after = trimmed.slice(start + match[0].length).trim();
-    const text = `${before} ${after}`.replace(/^[\s\u3000:：,，-]+|[\s\u3000:：,，-]+$/g, '').trim();
-    const explicitMotherChild = /^の子(?:牛)?/.test(after);
-
-    const matchedCalves = calves.filter(c => !c.isRemoved && c.earTag && c.earTag.endsWith(digits));
-    if (matchedCalves.length > 1) return { kind: 'AMBIGUOUS_CALF', digits, matches: matchedCalves };
-    if (matchedCalves.length === 1) {
-        const calf = matchedCalves[0];
-        const cow = cows.find(c => c.id === calf.motherId);
-        if (cow) return { kind: 'CALF', calf, cow, text };
-        return { kind: 'PENDING_CALF', digits, text };
-    }
-
+    const [, digits, calfFlag, rest] = match;
     const matchedCows = cows.filter(c => !c.isRemoved && c.earTag && c.earTag.endsWith(digits));
 
-    if (matchedCows.length === 0) return { kind: 'PENDING_CALF', digits, text };
+    if (matchedCows.length === 0) return { kind: 'NOT_FOUND_COW', digits };
     if (matchedCows.length > 1) return { kind: 'AMBIGUOUS_COW', digits, matches: matchedCows };
 
     const cow = matchedCows[0];
+    const text = rest.trim();
 
-    if (explicitMotherChild) {
+    if (calfFlag) {
         const cowCalves = calves
             .filter(c => c.motherId === cow.id && !c.isRemoved)
             .sort((a, b) => (b.birthDate || '').localeCompare(a.birthDate || ''));
-        if (cowCalves.length === 0) return { kind: 'PENDING_CALF', digits, text, cow };
+        if (cowCalves.length === 0) return { kind: 'NOT_FOUND_CALF', digits, cow };
         return { kind: 'CALF', calf: cowCalves[0], cow, text };
     }
 

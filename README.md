@@ -1,40 +1,29 @@
-# WagyuMate Refined
+# WagyuMate
 
-黒毛和牛の繁殖・分娩・子牛管理を行うための React/Vite アプリです。
+和牛農家向けの牛群・繁殖管理アプリです。母牛と子牛の情報、繁殖履歴、分娩予定、子牛の血統・販売情報を管理します。
 
-## 主な機能
+## 開発環境
 
-- 母牛一覧、子牛一覧、個体詳細管理
-- 授精、妊娠鑑定、分娩、発情、治療、メモの記録
-- 分娩予定、再発情確認、妊娠鑑定、乾乳目安のカレンダー表示
-- 分娩後日数、空胎日数、初回授精目安に基づくアラート
-- ダッシュボードで妊娠率、種付後、空胎・休養頭数を確認
-- Firebase Realtime Database を使った家族共有設定
-- PWA 用 manifest とアイコン付き
+- Node.js
+- npm
 
-## GitHub へアップロードする方法
+## 起動
 
-1. このフォルダの中身を GitHub の新しいリポジトリにアップロードします。
-2. GitHub の `Settings` → `Pages` を開きます。
-3. `Build and deployment` の `Source` を `GitHub Actions` にします。
-4. `main` ブランチへアップロードまたは push すると、自動でビルドされます。
-
-## ローカルで動かす場合
-
-ローカル確認には Node.js が必要です。
-
-```bash
-npm install
+```powershell
+npm ci
 npm run dev
 ```
 
-本番用にビルドする場合:
+本番用ファイルの生成:
 
-```bash
+```powershell
 npm run build
 ```
 
-## Firebase 共有について
+## データについて
 
-アプリ内の設定画面から Firebase 設定 JSON と家族IDを入力すると、複数端末でデータ共有できます。
-Firebase を使わない場合でも、ブラウザの localStorage に保存されます。
+アプリの基本データはブラウザの`localStorage`に保存します。設定画面でFirebase Realtime Databaseを設定すると、複数端末間で同期できます。GitHubへアップロードする前に、個人情報や本番環境の設定値を含めていないか確認してください。
+
+## 作業記録
+
+改良内容と確認結果は[WORKLOG.md](./WORKLOG.md)に記録しています。

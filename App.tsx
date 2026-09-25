@@ -10,10 +10,11 @@ import { Analytics } from './components/Analytics';
 import { Settings } from './components/Settings';
 import { MOCK_COWS, MOCK_CALVES } from './data/mockData';
 import { DEFAULT_SETTINGS, MOCK_BULLS as INITIAL_BULLS } from './constants';
-import { generateAlerts, calculateExpectedCalvingDate, recalculateCowStatus, daysBetween, parseDate } from './utils/breedingService';
+import { generateAlerts, calculateExpectedCalvingDate, recalculateCowStatus, daysBetween, parseDate, resolveFatherName, earTagLast5, safeEventsArray } from './utils/breedingService';
 import { Cow, BreedingEvent, EventType, BreedingStatus, GeneralEvent, Calf } from './types';
 import { Wifi, WifiOff } from 'lucide-react';
 import { initFirebase, saveToRemote, subscribeToRemote } from './utils/firebaseService';
+import { ReceiptScanner } from './components/ReceiptScanner';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -60,6 +61,7 @@ export default function App() {
   const [selectedCowId, setSelectedCowId] = useState<string | null>(null);
   const [selectedCalfId, setSelectedCalfId] = useState<string | null>(null);
   const [lastViewedCowId, setLastViewedCowId] = useState<string | null>(null);
+  const [showListScanner, setShowListScanner] = useState(false);
   
   const [bullList, setBullList] = useState<string[]>(() => {
     try {
@@ -204,6 +206,16 @@ export default function App() {
 
   const handleUpdateCow = (updatedCow: Cow) => setCows(prev => prev.map(c => c.id === updatedCow.id ? updatedCow : c));
   const handleAddCalf = (newCalf: Calf) => {
+      // ★父牛が空なら母牛の種付履歴から自動補完（全登録ルート共通の最終防衛ライン）
+      if (!newCalf.fatherName) {
+          const resolved = resolveFatherName(newCalf, cows);
+          if (resolved) newCalf.fatherName = resolved;
+      }
+      const motherCow = newCalf.motherId ? cows.find(c => c.id === newCalf.motherId) : undefined;
+      if (motherCow) {
+          newCalf.motherFatherName ||= motherCow.fatherName || undefined;
+          newCalf.motherMotherFatherName ||= motherCow.motherFatherName || undefined;
+      }
       // Pre-populate with default todos if any exist in settings
       if (settings.defaultCalfTodos && settings.defaultCalfTodos.length > 0) {
           const nowStr = new Date().toISOString();
@@ -217,8 +229,40 @@ export default function App() {
       }
       setCalves(prev => [...prev, newCalf]); 
   };
-  const handleUpdateCalf = (updatedCalf: Calf) => setCalves(prev => prev.map(c => c.id === updatedCalf.id ? updatedCalf : c));
+  const handleUpdateCalf = (updatedCalf: Calf) => {
+      // ★更新時も父牛が空なら自動補完
+      if (!updatedCalf.fatherName) {
+          const resolved = resolveFatherName(updatedCalf, cows);
+          if (resolved) updatedCalf = { ...updatedCalf, fatherName: resolved };
+      }
+      const motherCow = updatedCalf.motherId ? cows.find(c => c.id === updatedCalf.motherId) : undefined;
+      if (motherCow) updatedCalf = {
+          ...updatedCalf,
+          motherFatherName: updatedCalf.motherFatherName || motherCow.fatherName || undefined,
+          motherMotherFatherName: updatedCalf.motherMotherFatherName || motherCow.motherFatherName || undefined
+      };
+      setCalves(prev => prev.map(c => c.id === updatedCalf.id ? updatedCalf : c));
+  };
   const handleDeleteCalf = (calfId: string) => setCalves(prev => prev.filter(c => c.id !== calfId));
+  // 子牛一覧からの伝票スキャン: 耳標番号(末尾5桁)が既存の子牛と一致すれば更新、なければ新規作成する
+  const handleListScanExtract = (data: Partial<Calf>) => {
+      const scannedTag = earTagLast5(data.earTag);
+      const existing = scannedTag ? calves.find(c => earTagLast5(c.earTag) === scannedTag) : undefined;
+      if (existing) {
+          const merged: Calf = { ...existing, ...data };
+          handleUpdateCalf(merged);
+          handleCalfClick(existing.id);
+      } else {
+          const newCalf: Calf = {
+              id: Date.now().toString(),
+              sex: 'MALE',
+              birthDate: new Date().toISOString().split('T')[0],
+              ...data,
+          };
+          handleAddCalf(newCalf);
+          handleCalfClick(newCalf.id);
+      }
+  };
   const handleResetSalesData = () => setCalves(prev => prev.map(c => ({ ...c, price: undefined, weight: undefined, grade: undefined, auctionDate: undefined })));
   const handleAddGeneralEvent = (event: Omit<GeneralEvent, 'id'>) => { setGeneralEvents(prev => [...prev, { ...event, id: Date.now().toString() }]); };
   
@@ -263,7 +307,7 @@ export default function App() {
       setCows(prev => prev.map(cow => {
           if (cow.id !== cowId) return cow;
           
-          const filteredEvents = cow.events.filter(e => e.id !== eventId);
+          const filteredEvents = safeEventsArray(cow.events).filter(e => e.id !== eventId);
           const { status, lastInseminationDate, lastCalvingDate, expectedCalvingDate } = recalculateCowStatus(filteredEvents);
 
           return {
@@ -277,11 +321,24 @@ export default function App() {
       }));
   };
 
+  // ★表示用: 父牛が未設定の子牛は、母牛の種付履歴からその場で補完して表示する
+  // （過去に登録済みで父牛が空のままのデータも「不明」にならず表示される）
+  const enrichedCalves = calves.map(c => {
+      const motherCow = c.motherId ? cows.find(m => m.id === c.motherId) : undefined;
+      const resolved = resolveFatherName(c, cows);
+      return {
+          ...c,
+          fatherName: c.fatherName || resolved,
+          motherFatherName: c.motherFatherName || motherCow?.fatherName,
+          motherMotherFatherName: c.motherMotherFatherName || motherCow?.motherFatherName
+      };
+  });
+
   let tabContent;
   switch (activeTab) {
-    case 'dashboard': tabContent = ( <Dashboard cows={cows} alerts={alerts} onCowClick={handleCowClick} generalEvents={generalEvents} onAddGeneralEvent={handleAddGeneralEvent} /> ); break;
+    case 'dashboard': tabContent = ( <Dashboard cows={cows} calves={calves} alerts={alerts} onCowClick={handleCowClick} generalEvents={generalEvents} onAddGeneralEvent={handleAddGeneralEvent} onUpdateCow={handleUpdateCow} onUpdateCalf={handleUpdateCalf} /> ); break;
     case 'list': tabContent = <CowList cows={cows} onCowClick={handleCowClick} settings={settings} onAddCow={handleAddCow} lastViewedCowId={lastViewedCowId} />; break;
-    case 'calves': tabContent = <CalfList calves={calves} onCalfClick={handleCalfClick} onAddCalfClick={() => {
+    case 'calves': tabContent = <CalfList calves={enrichedCalves} cows={cows} onCalfClick={handleCalfClick} onScanReceiptClick={() => setShowListScanner(true)} onAddCalfClick={() => {
         const newCalf: Calf = {
             id: Date.now().toString(),
             sex: 'MALE',
@@ -292,14 +349,33 @@ export default function App() {
     }} />; break;
     case 'analytics': tabContent = ( <Analytics cows={cows} calves={calves} settings={settings} onResetData={handleResetSalesData} onCowClick={handleCowClick} /> ); break;
     case 'settings': tabContent = ( <Settings settings={settings} onSave={setSettings} cows={cows} calves={calves} generalEvents={generalEvents} bullList={bullList} onImportCows={handleImportCows} onRestoreBackup={(restoredCows, restoredCalves, restoredSettings, restoredGeneralEvents, restoredBullList) => { setCows(restoredCows); setCalves(restoredCalves); setSettings(restoredSettings); if(restoredGeneralEvents) setGeneralEvents(restoredGeneralEvents); if(restoredBullList) setBullList(restoredBullList); }} /> ); break;
-    default: tabContent = ( <Dashboard cows={cows} alerts={alerts} onCowClick={handleCowClick} generalEvents={generalEvents} onAddGeneralEvent={handleAddGeneralEvent} /> );
+    default: tabContent = ( <Dashboard cows={cows} calves={calves} alerts={alerts} onCowClick={handleCowClick} generalEvents={generalEvents} onAddGeneralEvent={handleAddGeneralEvent} onUpdateCow={handleUpdateCow} onUpdateCalf={handleUpdateCalf} /> );
   }
 
   const targetCow = selectedCowId ? cows.find(c => c.id === selectedCowId) : null;
-  const targetCalf = selectedCalfId ? calves.find(c => c.id === selectedCalfId) : null;
+  const targetCalf = selectedCalfId ? enrichedCalves.find(c => c.id === selectedCalfId) : null;
+
+  // 父牛・母の父の入力候補（種雄牛リスト + これまでに登録された父牛名）。全画面共通の1つのdatalistを参照する。
+  const bullCandidates = Array.from(new Set([
+      ...bullList,
+      ...cows.map(c => c.fatherName),
+      ...cows.map(c => c.motherFatherName),
+      ...calves.map(c => c.fatherName),
+      ...calves.map(c => c.motherFatherName),
+      ...calves.map(c => c.motherMotherFatherName),
+  ].filter((v): v is string => !!v))).sort((a, b) => a.localeCompare(b, 'ja'));
 
   return (
-    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans max-w-md mx-auto relative shadow-2xl overflow-hidden">
+    <div className="min-h-screen bg-gray-50 text-gray-800 font-sans w-full max-w-6xl mx-auto relative shadow-2xl overflow-hidden">
+        <datalist id="bull-candidates">
+            {bullCandidates.map(name => <option key={name} value={name} />)}
+        </datalist>
+        {showListScanner && (
+            <ReceiptScanner
+                onExtract={handleListScanExtract}
+                onClose={() => setShowListScanner(false)}
+            />
+        )}
         {settings.sync?.enabled && ( <div className={`absolute top-0 right-0 p-2 z-50 ${syncStatus === 'ONLINE' ? 'text-green-500' : 'text-gray-400'}`}> {syncStatus === 'ONLINE' ? <Wifi size={16} /> : <WifiOff size={16} />} </div> )}
         <main className="h-screen overflow-hidden flex flex-col">
             <div className={`flex-1 overflow-y-auto relative scroll-smooth ${targetCow || targetCalf ? 'hidden' : 'block'}`}>
@@ -310,7 +386,7 @@ export default function App() {
                     <CowDetail 
                         cow={targetCow} 
                         allCows={cows} 
-                        calves={calves.filter(c => c.motherId === targetCow.id)} 
+                        calves={enrichedCalves.filter(c => c.motherId === targetCow.id)} 
                         settings={settings}
                         onBack={handleBack} 
                         onAddEvent={handleAddEvent}
