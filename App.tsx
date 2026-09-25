@@ -378,7 +378,7 @@ export default function App() {
         )}
         {settings.sync?.enabled && ( <div className={`absolute top-0 right-0 p-2 z-50 ${syncStatus === 'ONLINE' ? 'text-green-500' : 'text-gray-400'}`}> {syncStatus === 'ONLINE' ? <Wifi size={16} /> : <WifiOff size={16} />} </div> )}
         <main className="h-screen overflow-hidden flex flex-col">
-            <div className={`flex-1 overflow-y-auto relative scroll-smooth ${targetCow || targetCalf ? 'hidden' : 'block'}`}>
+            <div className={`flex-1 min-h-0 overflow-y-auto relative scroll-smooth ${targetCow || targetCalf ? 'hidden' : 'block'}`}>
                 {tabContent}
             </div>
             {targetCow && (
