@@ -4,7 +4,7 @@ import { Cow, BreedingStatus, EventType, Calf, BreedingEvent, Note, Settings as 
 import { ArrowLeft, Syringe, Baby, Activity, TrendingUp, History, Star, Pill, Plus, X, Trash2, Zap, Trophy, AlertTriangle, GitFork, Calendar, Pencil, Save, Dna, ShoppingBag, Stethoscope, Check, Minus, CheckCircle2, Circle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { GESTATION_DAYS, COMMON_MEMO_TAGS } from '../constants';
-import { addDays, formatDate, formatDateJP, daysBetween, parseDate, calculateAge, safeEventsArray, earTagLast5 } from '../utils/breedingService';
+import { addDays, formatDate, formatDateJP, daysBetween, parseDate, calculateAge, safeEventsArray } from '../utils/breedingService';
 
 import { MemoLine } from './MemoLine';
 import { EraDateInput } from './EraDateInput';
@@ -67,7 +67,6 @@ export const CowDetail: React.FC<CowDetailProps> = ({
   });
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const fullEarTag = cow.earTag.replace(/\D/g, '').slice(-10);
   
   const [insemDate, setInsemDate] = useState(todayStr);
   const [selectedBull, setSelectedBull] = useState(''); 
@@ -108,7 +107,7 @@ export const CowDetail: React.FC<CowDetailProps> = ({
   };
   const handleCalving = () => {
       // ★安全版: eventsがFirebase由来のオブジェクト型でも動作する
-      const finalBull = calvingBull.trim() || getBullForBirthDate(calvingDate) || getLastBullName(calvingDate);
+      const finalBull = calvingBull || getBullForBirthDate(calvingDate) || '';
 
       onAddEvent(cow.id, {
           type: EventType.CALVING,
@@ -184,13 +183,13 @@ export const CowDetail: React.FC<CowDetailProps> = ({
 
   // Helper: Get the bull name from the most recent insemination event
   // Firebase由来のオブジェクト型eventsにも対応
-  const getLastBullName = (throughDate?: string): string => {
+  const getLastBullName = (): string => {
       let evts: any = cow.events;
       if (!evts) return '';
       if (!Array.isArray(evts) && typeof evts === 'object') evts = Object.values(evts);
       if (!Array.isArray(evts)) return '';
       const lastInsem = evts
-          .filter((e: any) => e && e.type === EventType.INSEMINATION && e.relatedId && (!throughDate || e.date <= throughDate))
+          .filter((e: any) => e && e.type === EventType.INSEMINATION && e.relatedId)
           .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
       return (lastInsem?.relatedId) || '';
   };
@@ -580,9 +579,9 @@ export const CowDetail: React.FC<CowDetailProps> = ({
                 </h1>
                 <div className="font-mono flex items-baseline">
                     <span className="text-xs text-gray-400 mr-1 self-center">ID:</span>
-                    <span className="text-gray-900 text-lg font-bold">{earTagLast5(cow.earTag) || cow.earTag}</span>
-                    {fullEarTag.length > 5 && (
-                        <span className="text-sm font-medium text-gray-500 ml-1">({fullEarTag})</span>
+                    <span className="text-gray-900 text-lg font-bold">{cow.earTag.slice(-5)}</span>
+                    {cow.earTag.length > 5 && (
+                        <span className="text-sm font-medium text-gray-500 ml-1">({cow.earTag})</span>
                     )}
                 </div>
             </div>

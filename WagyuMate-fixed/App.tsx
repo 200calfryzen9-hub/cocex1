@@ -208,12 +208,8 @@ export default function App() {
   const handleAddCalf = (newCalf: Calf) => {
       // ★父牛が空なら母牛の種付履歴から自動補完（全登録ルート共通の最終防衛ライン）
       if (!newCalf.fatherName) {
-          const mother = newCalf.motherId ? cows.find(c => c.id === newCalf.motherId) : undefined;
-          const calvingEvent = safeEventsArray(mother?.events).find(event =>
-              event.type === EventType.CALVING && event.date === newCalf.birthDate
-          );
-          const sire = calvingEvent?.metadata?.fatherName || resolveFatherName(newCalf, cows);
-          if (sire) newCalf = { ...newCalf, fatherName: sire };
+          const resolved = resolveFatherName(newCalf, cows);
+          if (resolved) newCalf.fatherName = resolved;
       }
       const motherCow = newCalf.motherId ? cows.find(c => c.id === newCalf.motherId) : undefined;
       if (motherCow) {
@@ -382,7 +378,7 @@ export default function App() {
         )}
         {settings.sync?.enabled && ( <div className={`absolute top-0 right-0 p-2 z-50 ${syncStatus === 'ONLINE' ? 'text-green-500' : 'text-gray-400'}`}> {syncStatus === 'ONLINE' ? <Wifi size={16} /> : <WifiOff size={16} />} </div> )}
         <main className="h-screen overflow-hidden flex flex-col">
-            <div className={`flex-1 min-h-0 overflow-y-auto relative scroll-smooth ${targetCow || targetCalf ? 'hidden' : 'block'}`}>
+            <div className={`flex-1 overflow-y-auto relative scroll-smooth ${targetCow || targetCalf ? 'hidden' : 'block'}`}>
                 {tabContent}
             </div>
             {targetCow && (

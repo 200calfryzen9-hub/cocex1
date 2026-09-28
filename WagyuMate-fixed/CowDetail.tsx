@@ -4,7 +4,7 @@ import { Cow, BreedingStatus, EventType, Calf, BreedingEvent, Note, Settings as 
 import { ArrowLeft, Syringe, Baby, Activity, TrendingUp, History, Star, Pill, Plus, X, Trash2, Zap, Trophy, AlertTriangle, GitFork, Calendar, Pencil, Save, Dna, ShoppingBag, Stethoscope, Check, Minus, CheckCircle2, Circle } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { GESTATION_DAYS, COMMON_MEMO_TAGS } from '../constants';
-import { addDays, formatDate, formatDateJP, daysBetween, parseDate, calculateAge, safeEventsArray, earTagLast5 } from '../utils/breedingService';
+import { addDays, formatDate, formatDateJP, daysBetween, parseDate, calculateAge } from '../utils/breedingService';
 
 import { MemoLine } from './MemoLine';
 import { EraDateInput } from './EraDateInput';
@@ -67,7 +67,6 @@ export const CowDetail: React.FC<CowDetailProps> = ({
   });
 
   const todayStr = new Date().toISOString().split('T')[0];
-  const fullEarTag = cow.earTag.replace(/\D/g, '').slice(-10);
   
   const [insemDate, setInsemDate] = useState(todayStr);
   const [selectedBull, setSelectedBull] = useState(''); 
@@ -108,7 +107,7 @@ export const CowDetail: React.FC<CowDetailProps> = ({
   };
   const handleCalving = () => {
       // ★安全版: eventsがFirebase由来のオブジェクト型でも動作する
-      const finalBull = calvingBull.trim() || getBullForBirthDate(calvingDate) || getLastBullName(calvingDate);
+      const finalBull = calvingBull || getLastBullName() || '';
 
       onAddEvent(cow.id, {
           type: EventType.CALVING,
@@ -122,9 +121,7 @@ export const CowDetail: React.FC<CowDetailProps> = ({
           birthDate: calvingDate,
           sex: calfSex,
           earTag: '',
-          fatherName: finalBull || undefined,
-          motherFatherName: cow.fatherName || undefined,
-          motherMotherFatherName: cow.motherFatherName || undefined
+          fatherName: finalBull || undefined
       };
       onAddCalf(newCalf);
       setShowCalvingModal(false);
@@ -148,16 +145,11 @@ export const CowDetail: React.FC<CowDetailProps> = ({
   };
 
   const handlePregCheck = (isPregnant: boolean) => {
-      const inseminations = safeEventsArray(cow.events)
-          .filter((e: any) => e && e.type === EventType.INSEMINATION && e.relatedId && e.date <= pregCheckDate)
-          .sort((a: any, b: any) => b.date.localeCompare(a.date));
-      const confirmedInsemination = inseminations[0];
       onAddEvent(cow.id, {
           type: EventType.PREG_CHECK,
           date: pregCheckDate,
           details: isPregnant ? '妊娠鑑定: プラス(+)' : '妊娠鑑定: マイナス(-)',
-          relatedId: isPregnant ? confirmedInsemination?.relatedId : undefined,
-          metadata: { pregResult: isPregnant, fatherName: isPregnant ? confirmedInsemination?.relatedId : undefined, inseminationEventId: isPregnant ? confirmedInsemination?.id : undefined }
+          metadata: { pregResult: isPregnant }
       });
       setShowPregCheckModal(false);
   };
@@ -184,32 +176,15 @@ export const CowDetail: React.FC<CowDetailProps> = ({
 
   // Helper: Get the bull name from the most recent insemination event
   // Firebase由来のオブジェクト型eventsにも対応
-  const getLastBullName = (throughDate?: string): string => {
+  const getLastBullName = (): string => {
       let evts: any = cow.events;
       if (!evts) return '';
       if (!Array.isArray(evts) && typeof evts === 'object') evts = Object.values(evts);
       if (!Array.isArray(evts)) return '';
       const lastInsem = evts
-          .filter((e: any) => e && e.type === EventType.INSEMINATION && e.relatedId && (!throughDate || e.date <= throughDate))
+          .filter((e: any) => e && e.type === EventType.INSEMINATION && e.relatedId)
           .sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
       return (lastInsem?.relatedId) || '';
-  };
-
-  const getBullForBirthDate = (birthDate: string): string => {
-      const evts = safeEventsArray(cow.events);
-      const positiveChecks = evts.filter(e => e && e.type === EventType.PREG_CHECK && e.metadata?.pregResult === true && e.date <= birthDate)
-          .sort((a, b) => b.date.localeCompare(a.date));
-      for (const check of positiveChecks) {
-          const insemination = evts.find(e => e && e.type === EventType.INSEMINATION && e.id === check.metadata?.inseminationEventId);
-          const sire = check.metadata?.fatherName || check.relatedId || insemination?.relatedId;
-          if (!sire) continue;
-          const expectedDate = addDays(parseDate(insemination?.date || check.date), GESTATION_DAYS);
-          if (Math.abs(daysBetween(parseDate(birthDate), expectedDate)) <= 45) return sire;
-      }
-      const matchingService = evts.filter(e => e && e.type === EventType.INSEMINATION && e.relatedId && e.date <= birthDate)
-          .sort((a, b) => b.date.localeCompare(a.date))
-          .find(e => Math.abs(daysBetween(parseDate(birthDate), addDays(parseDate(e.date), GESTATION_DAYS))) <= 45);
-      return matchingService?.relatedId || '';
   };
 
   const openCalfModal = (calf?: Calf) => {
@@ -221,11 +196,11 @@ export const CowDetail: React.FC<CowDetailProps> = ({
               earTag: calf.earTag || '', birthDate: calf.birthDate, sex: calf.sex, 
               price: displayPrice, weight: calf.weight ? calf.weight.toString() : '', 
               auctionDate: calf.auctionDate || '',
-              fatherName: calf.fatherName || getBullForBirthDate(calf.birthDate)
+              fatherName: calf.fatherName || getLastBullName()
           });
       } else {
           setSelectedCalf(null);
-          const autoBull = getBullForBirthDate(todayStr);
+          const autoBull = getLastBullName();
           setCalfForm({
               earTag: '', birthDate: todayStr, sex: 'MALE', 
               price: '', weight: '', auctionDate: '',
@@ -265,9 +240,9 @@ export const CowDetail: React.FC<CowDetailProps> = ({
   useEffect(() => {
       if (showCalvingModal) {
           // ★安全版: 種付履歴の最新種雄牛を自動セット（オブジェクト型events対応）
-          setCalvingBull(getBullForBirthDate(calvingDate));
+          setCalvingBull(getLastBullName());
       }
-  }, [showCalvingModal, cow.events, calvingDate]);
+  }, [showCalvingModal, cow.events]);
 
   const getStatusColor = (status: BreedingStatus) => {
     // Custom color from settings
@@ -580,10 +555,7 @@ export const CowDetail: React.FC<CowDetailProps> = ({
                 </h1>
                 <div className="font-mono flex items-baseline">
                     <span className="text-xs text-gray-400 mr-1 self-center">ID:</span>
-                    <span className="text-gray-900 text-lg font-bold">{earTagLast5(cow.earTag) || cow.earTag}</span>
-                    {fullEarTag.length > 5 && (
-                        <span className="text-sm font-medium text-gray-500 ml-1">({fullEarTag})</span>
-                    )}
+                    <span className="text-gray-900 text-lg font-bold">{cow.earTag.slice(-5)}</span>
                 </div>
             </div>
         </div>
