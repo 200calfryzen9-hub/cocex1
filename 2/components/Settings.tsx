@@ -173,7 +173,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave, cows, calv
     const handleExportCowCsv = () => {
         let cowCsvContent = "耳標番号,名号,生年月日,父牛,母の父,種付け年月日,種付け種雄牛,分娩年月日,メモ内容\n";
         
-        cows.forEach(cow => {
+        cows.filter(cow => !cow.isRemoved).forEach(cow => {
             const lastInsemEvent = (Array.isArray(cow.events) ? cow.events : Object.values(cow.events || {}) as any[]).filter(e => e.type === EventType.INSEMINATION).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
             const bullName = lastInsemEvent?.relatedId || '';
             const notesText = (cow.notes || []).map(n => `[${n.isTodo ? (n.isDone ? '済' : '未') : 'メモ'}] ${n.text}`).join(' / ').replace(/"/g, '""');
@@ -297,7 +297,7 @@ export const Settings: React.FC<SettingsProps> = ({ settings, onSave, cows, calv
         const group4: Cow[] = [];
         const group5: Cow[] = [];
 
-        cows.filter(cow => !cow.isRemoved).forEach(cow => {
+        cows.forEach(cow => {
             const aiDays = getDaysBetween(cow.lastInseminationDate || '');
             const openDays = getDaysBetween(cow.lastCalvingDate || ''); // 分娩後〇日
 
